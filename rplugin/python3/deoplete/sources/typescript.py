@@ -11,8 +11,8 @@ from deoplete.util import error
 sys.path.insert(1, os.path.dirname(__file__) + '/../../nvim_typescript')
 
 from utils import getKind, convert_completion_data, convert_detailed_completion_data
-from client import Client
-
+# from client import Client
+import client
 RELOAD_INTERVAL = 1
 RESPONSE_TIMEOUT_SECONDS = 20
 
@@ -24,29 +24,25 @@ class Source(Base):
         Base.__init__(self, vim)
         self.name = "typescript"
         self.mark = self.vim.vars['nvim_typescript#completion_mark']
-        self.filetypes = ["typescript", "tsx", "typescript.tsx", "javascript", "jsx", "javascript.jsx"] \
-            if self.vim.vars["nvim_typescript#javascript_support"] \
-            else ["typescript", "tsx", "typescript.tsx", "vue"] \
-            if self.vim.vars["nvim_typescript#vue_support"] \
-            else ["typescript", "tsx", "typescript.tsx"]
+        self.filetypes = ["typescript", "tsx", "typescript.tsx"]
+        # self.filetypes = ["typescript", "tsx", "typescript.tsx", "javascript", "jsx", "javascript.jsx"] \
+        #     if self.vim.vars["nvim_typescript#javascript_support"] \
+        #     else ["typescript", "tsx", "typescript.tsx", "vue"] \
+        #     if self.vim.vars["nvim_typescript#vue_support"] \
+        #     else ["typescript", "tsx", "typescript.tsx"]
         self.rank = 1000
         self.min_pattern_length = 1
-        self.input_pattern = r'.'
-        # self.input_pattern = r'(\.|::)\w*'
+        self.input_pattern = '((?:\.|(?:,|:|->)\s+)\w*|\()'
         self._last_input_reload = time()
-        self._max_completion_detail = self.vim.vars[
-            "nvim_typescript#max_completion_detail"]
-
-        # TSServer client
-        # self._client = Client(debug_fn=self.debug, log_fn=self.log)
-        self._client = Client()
+        self._max_completion_detail = self.vim.vars["nvim_typescript#max_completion_detail"]
+        self._client = client
 
     def log(self, message):
         """
         Log message to vim echo
         """
         self.debug('************')
-        self.vim.out_write('{} \n'.format(message))
+        self.debug('{} \n'.format(message))
         self.debug('************')
 
     def reload(self):
@@ -59,9 +55,7 @@ class Source(Base):
         tmpfile = NamedTemporaryFile(delete=False)
         tmpfile.write(contents.encode("utf-8"))
         tmpfile.close()
-
         self._client.reload(filename, tmpfile.name)
-
         os.unlink(tmpfile.name)
 
     def relative_file(self):
@@ -74,18 +68,12 @@ class Source(Base):
         """
         returns the cursor position
         """
-        m = re.search(r"\w*$", context["input"], re.IGNORECASE)
-        return m.start() if m else -1
+        m = re.search(r"\w*$", context['input'])
+        return m.start() if m else self.vim.current.window.cursor.col
 
     def gather_candidates(self, context):
-        """
-        Main deoplete method
-        returns completions from client.py
-        """
-        # reload if last reload expired or input completion is a method extraction
-        # pylint: disable=locally-disabled, line-too-long
-
         try:
+            # self.log(self._client.)
             if time() - self._last_input_reload > RELOAD_INTERVAL or re.search(r"\w*\.", context["input"]):
                 self._last_input_reload = time()
                 self.reload()
@@ -96,7 +84,7 @@ class Source(Base):
                 offset=context["complete_position"] + 1,
                 prefix=context["complete_str"]
             )
-            # self.log(data)
+
             if len(data) == 0:
                 return []
 
@@ -127,6 +115,4 @@ class Source(Base):
 
             return [convert_detailed_completion_data(e, self.vim, isDeoplete=True) for e in detailed_data]
         except:
-        #     e = sys.exc_info()[0]
-        #     error(self.vim, "<p>Error: %s</p>" % e)
             return []

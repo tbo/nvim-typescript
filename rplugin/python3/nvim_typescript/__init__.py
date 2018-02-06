@@ -7,7 +7,7 @@ from time import time
 from tempfile import NamedTemporaryFile
 from functools import wraps
 sys.path.insert(1, os.path.dirname(__file__))
-from client import Client
+import client
 import utils
 RELOAD_INTERVAL = 1
 
@@ -27,6 +27,7 @@ def ts_version_support(version):
                 'Not supported in this version of TypeScript, please update')
         return decorated_function
     return decorator
+
 
 """
 Decorator to check if server is running
@@ -49,7 +50,8 @@ class TypescriptHost(object):
 
     def __init__(self, vim):
         self.vim = vim
-        self._client = Client(debug_fn=self.log, log_fn=self.log)
+        # self._client = Client(debug_fn=self.log, log_fn=self.log)
+        self._client = client
         self._last_input_reload = time()
         self.cwd = os.getcwd()
         self.highlight_source = 0
@@ -96,7 +98,7 @@ class TypescriptHost(object):
             debug_options = self.vim.vars["nvim_typescript#debug_settings"]
             self._client.serverPath = self.vim.vars["nvim_typescript#server_path"]
             if self._client.start(should_debug, debug_options):
-                self._client.setTsConfig()
+                self._client.setTsConfigVersion()
                 self._client.open(self.relative_file())
                 self.printMsg('Server Started')
 
@@ -305,6 +307,7 @@ class TypescriptHost(object):
     #     else:
     #         self.vim.call('neomake#process_remote_maker', errorLoc, args[0])
     #
+
     def reportErrors(self, errors):
         self.vim.call('setloclist', 0, errors, 'r', 'Errors')
         buf = self.vim.current.buffer
@@ -326,7 +329,7 @@ class TypescriptHost(object):
                     # list
                     e['col'] - 1,
                     end,
-                    src_id = self.highlight_source
+                    src_id=self.highlight_source
                 )
 
     @neovim.command("TSRename", nargs="*")
@@ -338,7 +341,8 @@ class TypescriptHost(object):
         self.reload()
         symbol = self.vim.eval('expand("<cword>")')
         if not args:
-            newName = self.vim.call('input', 'nvim-ts: rename {0} to '.format(symbol))
+            newName = self.vim.call(
+                'input', 'nvim-ts: rename {0} to '.format(symbol))
         else:
             newName = args[0]
         file = self.vim.current.buffer.name
@@ -431,8 +435,8 @@ class TypescriptHost(object):
                                          'newText']) is not None
 
                 leadingAndTrailingNewLineRegex = r'^\n|\n$'
-                addingNewLine= re.match(leadingNewLineRegex, change[
-                                        'newText']) is not None
+                addingNewLine = re.match(leadingNewLineRegex, change[
+                    'newText']) is not None
                 newText = re.sub(leadingAndTrailingNewLineRegex,
                                  '', change['newText'])
                 if changeOffset == 1:
@@ -629,7 +633,8 @@ class TypescriptHost(object):
         if args[0]:
             line_str = self.vim.current.line
             m = re.search(r"\w*$", line_str)
-            return m.start() if m else -1
+            return m.start() if m else self.vim.current.window.cursor.col
+
         else:
             prefix = args[1]
             file = self.relative_file()
