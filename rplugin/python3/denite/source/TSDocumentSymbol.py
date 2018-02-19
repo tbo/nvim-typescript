@@ -1,4 +1,5 @@
 #! /usr/bin/env python3
+
 from operator import itemgetter
 import sys
 import os
@@ -39,7 +40,6 @@ class Source(Base):
         return candidates
 
     def gather_candidates(self, context):
-        #context['is_interactive	']=True
         bufname = self.vim.current.buffer.name
         responce = self._client.getDocumentSymbols(bufname)
         if responce is None:

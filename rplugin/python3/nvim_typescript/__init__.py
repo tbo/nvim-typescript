@@ -1,3 +1,5 @@
+#! /usr/bin/env python3
+
 import sys
 import os
 import re
@@ -27,7 +29,6 @@ def ts_version_support(version):
                 'Not supported in this version of TypeScript, please update')
         return decorated_function
     return decorator
-
 
 """
 Decorator to check if server is running
@@ -96,11 +97,13 @@ class TypescriptHost(object):
         if self._client.server_handle is None:
             should_debug = self.vim.vars["nvim_typescript#debug_enabled"]
             debug_options = self.vim.vars["nvim_typescript#debug_settings"]
-            self._client.serverPath = self.vim.vars["nvim_typescript#server_path"]
+            self._client.setServerPath(
+                self.vim.vars["nvim_typescript#server_path"])
             if self._client.start(should_debug, debug_options):
                 self._client.setTsConfigVersion()
                 self._client.open(self.relative_file())
                 self.printMsg('Server Started')
+                self.log(self._client.server_handle)
 
     @neovim.command("TSStop")
     def tsstop(self):
@@ -655,11 +658,10 @@ class TypescriptHost(object):
                 for entry in data:
                     if (entry["kind"] != "warning"):
                         names.append(entry["name"])
-                detailed_data = self._client.completion_entry_details(
-                    file, line, col, names)
+                detailed_data = self._client.completion_entry_details(file, line, col, names)
                 if len(detailed_data) == 0:
                     return []
-                return [utils.convert_detailed_completion_data(e, self.vim, isDeoplete=False) for e in detailed_data]
+                return [utils.convert_detailed_completion_data(e, self.vim) for e in detailed_data]
 
     # Server utils, Status, version, path
     @neovim.function('TSGetServerPath', sync=True)
@@ -764,8 +766,7 @@ class TypescriptHost(object):
 
         matches = [
             utils.convert_detailed_completion_data(e,
-                                                   self.vim,
-                                                   isDeoplete=True)
+                                                   self.vim)
             for e in detailed_data]
         self.vim.call('cm#complete', info, ctx, startcol, matches)
 
@@ -791,7 +792,7 @@ class TypescriptHost(object):
         # self.vim.command('redraws!')
 
         # formatted = message[:winWidth]
-        self.vim.out_write('nvim-ts: {0}\n'.format(message))
+        self.vim.out_write('nvim-ts: {0} \n'.format(message))
 
     def log(self, message):
         """

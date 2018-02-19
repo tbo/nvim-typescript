@@ -1,8 +1,8 @@
+#! /usr/bin/env python3
+
 import os
-import sys
 import json
 import subprocess
-import signal
 
 
 # class Client(object):
@@ -12,6 +12,8 @@ __server_seq = 1
 __environ = os.environ.copy()
 tsConfigVersion = None
 serverPath = None
+logFun = None
+
 
 def __get_next_seq():
     global __server_seq
@@ -20,8 +22,13 @@ def __get_next_seq():
     return seq
 
 
-def setServerPath(value):
+def log(message):
+    global logFun
+    if logFun:
+        logFun(str(message))
 
+
+def setServerPath(value):
     """
     Set the server Path
     """
@@ -32,11 +39,6 @@ def setServerPath(value):
         serverPath = 'tsserver'
 
 
-# def getTsConfigVersion():
-#     global tsConfigVersion
-#     return tsConfigVersion
-
-
 def setTsConfigVersion():
     global tsConfigVersion
     global serverPath
@@ -45,9 +47,11 @@ def setTsConfigVersion():
     rawOutput = subprocess.check_output([command + ' --version'], shell=True)
 
     # strip nightly
-    pure_version = rawOutput.rstrip().decode('utf-8').split(' ').pop().split('-')[0]
+    pure_version = rawOutput.rstrip().decode(
+        'utf-8').split(' ').pop().split('-')[0]
     [major, minor, patch] = pure_version.split('.')[:3]
-    tsConfigVersion = {"major": int(major), "minor": int(minor), "patch": int(patch)}
+    tsConfigVersion = {"major": int(
+        major), "minor": int(minor), "patch": int(patch)}
 
 
 def isCurrentVersionHigher(val):
@@ -80,25 +84,17 @@ def project_cwd(root):
         return False
 
 
-def __log(message):
-    if log_fn:
-        log_fn(str(message))
-
-
-def __debug(message):
-    if debug_fn:
-        debug_fn(message)
-
-
 def stop():
     """
     send a stop request
     """
+    global server_handle
     server_handle.kill()
     server_handle = None
 
 
 def status():
+    global server_handle
     if server_handle is not None:
         poll = server_handle.poll()
         if poll is None:
@@ -116,7 +112,7 @@ def start(should_debug, debug_options):
     global server_handle
     global serverPath
     global __environ
-    
+
     # https://github.com/Microsoft/TypeScript/blob/master/lib/protocol.d.ts
     if server_handle is None:
         if should_debug is not 0:
@@ -130,8 +126,8 @@ def start(should_debug, debug_options):
             stdout=subprocess.PIPE,
             stderr=None,
             universal_newlines=True,
-            shell=True,
-            bufsize=-1,
+            # shell=True,
+            # bufsize=-1,
         )
         return True
     else:
@@ -154,56 +150,57 @@ def __write_to_server(data):
 
 
 def send_request(command, arguments=None):
-    """
-        Sends a properly formated request to the server
-        :type command: string
-        :type arguments: dict
-        :type wait_for_response: boolean
-    """
     global server_handle
+    # log(server_handle)
     request = build_request(command, arguments)
-    __write_to_server(request)
+    if server_handle is None:
+        log('no server_handle')
+    if server_handle is not None:
+        __write_to_server(request)
 
-    linecount = 0
-    headers = {}
-    while True:
-        headerline = server_handle.stdout.readline().strip()
-        newline = server_handle.stdout.readline().strip()
-        content = server_handle.stdout.readline().strip()
-        ret = json.loads(content)
-        # __log(ret)
+        # linecount = 0
+        # headers = {}
+        while True:
+            # log('here?')
+            headerline = server_handle.stdout.readline().strip()
+            # log('loggging {}'.format(serve))
+            newline = server_handle.stdout.readline().strip()
+            # log('loggging {}'.format(request))
+            content = server_handle.stdout.readline().strip()
+            # log('loggging {}'.format(content))
+            ret = json.loads(content)
 
-        # batch of ignore events.
-        # TODO: refactor for a conditional loop
+            # batch of ignore events.
+            # TODO: refactor for a conditional loop
 
-        # TS 1.9.x returns two reload finished responses
-        if not isCurrentVersionHigher(260) and isCurrentVersionHigher(190):
-            if ('body', {'reloadFinished': True}) in ret.items():
+            # TS 1.9.x returns two reload finished responses
+            if not isCurrentVersionHigher(260) and isCurrentVersionHigher(190):
+                if ('body', {'reloadFinished': True}) in ret.items():
+                    continue
+
+            # TS 2.0.6 introduces configFileDiag event, ignore
+            if ("event", "configFileDiag") in ret.items():
                 continue
 
-        # TS 2.0.6 introduces configFileDiag event, ignore
-        if ("event", "configFileDiag") in ret.items():
-            continue
-
-        if ("event", "requestCompleted") in ret.items():
-            continue
-
-        # TS 2.6 adds telemetry event, ignore
-        if ("event", "telemetry") in ret.items():
-            continue
-
-        if "request_seq" not in ret:
-            if ("event", "syntaxDiag") in ret.items():
+            if ("event", "requestCompleted") in ret.items():
                 continue
-            if ("event", "semanticDiag") in ret.items():
+
+            # TS 2.6 adds telemetry event, ignore
+            if ("event", "telemetry") in ret.items():
+                continue
+
+            if "request_seq" not in ret:
+                if ("event", "syntaxDiag") in ret.items():
+                    continue
+                if ("event", "semanticDiag") in ret.items():
+                    return ret
+                else:
+                    continue
+
+            if ret["request_seq"] > request['seq']:
+                return None
+            if ret["request_seq"] == request['seq']:
                 return ret
-            else:
-                continue
-
-        if ret["request_seq"] > request['seq']:
-            return None
-        if ret["request_seq"] == request['seq']:
-            return ret
 
 
 def send_command(command, arguments=None):
@@ -258,15 +255,8 @@ def saveto(file, tmpfile):
 
 
 def reload(file, tmpfile):
-    """
-        Sends a "reload" request
-
-        :type file: string
-        :type tmpfile: string
-    """
     args = {"file": file, "tmpfile": tmpfile}
     response = send_request("reload", args)
-    # __log('here?')
     return response["success"] if response and "success" in response else False
 
 
@@ -397,7 +387,6 @@ def completions(file, line, offset, prefix=""):
     }
 
     response = send_request("completions", args)
-
     return get_response_body(response)
 
 
