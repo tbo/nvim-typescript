@@ -6,11 +6,15 @@ import re
 import json
 import neovim
 from time import time
+import multiprocessing
+import threading
 from tempfile import NamedTemporaryFile
 from functools import wraps
+# import multiprocessing
 sys.path.insert(1, os.path.dirname(__file__))
 import client
 import utils
+
 RELOAD_INTERVAL = 1
 
 """
@@ -53,10 +57,15 @@ class TypescriptHost(object):
         self.vim = vim
         # self._client = Client(debug_fn=self.log, log_fn=self.log)
         self._client = client
+        self._client.logFun = self.log
         self._last_input_reload = time()
         self.cwd = os.getcwd()
         self.highlight_source = 0
+        # self.setUpClientThread()
 
+
+    # def setUpClientThread(self):
+    #     threading.Thread(target=client.startTCP).start()
     def relative_file(self):
         """
         Return the current file
@@ -103,7 +112,6 @@ class TypescriptHost(object):
                 self._client.setTsConfigVersion()
                 self._client.open(self.relative_file())
                 self.printMsg('Server Started')
-                self.log(self._client.server_handle)
 
     @neovim.command("TSStop")
     def tsstop(self):
@@ -240,100 +248,6 @@ class TypescriptHost(object):
             defLine = '{0}'.format(typeDefRes[0]['start']['line'])
             self.vim.command('e +' + defLine + ' ' + defFile)
 
-    # TODO: What to do about these?
-    # @neovim.command("TSGetErr")
-    # @ts_check_server
-    # def tsgeterr(self):
-    #     """
-    #     Get the type info
-    #     """
-    #     self.reload()
-    #     files = [self.relative_file()]
-    #     getErrRes = self._client.getErr(files)
-    #     if not getErrRes:
-    #         pass
-    #     else:
-    #         filename = getErrRes['file']
-    #
-    #         self.reportErrors([{
-    #             'filename': re.sub(self.cwd + '/', '', filename),
-    #             'lnum': e['start']['line'],
-    #             'col': e['start']['offset'],
-    #             'end': e['end'],
-    #             'text': e['text']
-    #         } for e in getErrRes['diagnostics']])
-    #
-    @neovim.command("TSSyncErr")
-    @ts_check_server
-    def tssyncerr(self, args=None):
-        """
-            Use syntacticDiagnosticsSync and semanticDiagnosticsSync to quickly load errors for the
-            current file.
-        """
-        self.reload()
-        f = self.relative_file()
-        syntacticRes = self._client.syntacticDiagnosticsSync(f)
-        semanticRes = self._client.semanticDiagnosticsSync(f)
-        if syntacticRes is None or semanticRes is None:
-            pass
-        else:
-            self.reportErrors([{
-                'text': d['text'],
-                'lnum': d['start']['line'],
-                'col': d['start']['offset'],
-                'end': d['end'],
-                'filename': f
-            } for d in syntacticRes + semanticRes])
-    #
-    #
-    # @neovim.function("TSGetErrFunc")
-    # @ts_check_server
-    # def getErrFunc(self, args):
-    #     getErrRes = self._client.getErr([self.relative_file()])
-    #     if not getErrRes:
-    #         pass
-    #     else:
-    #         filename = getErrRes['file']
-    #         errorList = getErrRes['diagnostics']
-    #         if len(errorList) > 0:
-    #             errorLoc = list(map(lambda error: {
-    #                 'type': error['category'][0].title(),
-    #                 'filename': re.sub(self.cwd + '/', '', filename),
-    #                 'lnum': error['start']['line'],
-    #                 'col': error['start']['offset'],
-    #                 'text': error['text'],
-    #                 'length': error['end']['offset'] - error['start']['offset']
-    #             }, errorList))
-    #
-    #     if args is None:
-    #         return errorLoc
-    #     else:
-    #         self.vim.call('neomake#process_remote_maker', errorLoc, args[0])
-    #
-
-    def reportErrors(self, errors):
-        self.vim.call('setloclist', 0, errors, 'r', 'Errors')
-        buf = self.vim.current.buffer
-        bufname = buf.name
-        if (self.highlight_source == 0):
-            self.highlight_source = self.vim.new_highlight_source()
-        buf.clear_highlight(self.highlight_source)
-        for e in errors:
-            if e['filename'] == bufname:
-                # highlight to end of line if the error goes past the line
-                end = e['end']['offset'] - \
-                    1 if e['end']['line'] == e['lnum'] else -1
-                buf.add_highlight(
-                    'ERROR',  # highlight group
-                    # annoyingly this command is 0-indexed unlike the location
-                    # list
-                    e['lnum'] - 1,
-                    # annoyingly this command is 0-indexed unlike the location
-                    # list
-                    e['col'] - 1,
-                    end,
-                    src_id=self.highlight_source
-                )
 
     @neovim.command("TSRename", nargs="*")
     @ts_check_server
@@ -676,7 +590,7 @@ class TypescriptHost(object):
         """
         get the ts version
         """
-        return self._client.tsConfig
+        return self._client.tsConfigVersion
 
     @neovim.function('TSGetServerStatus', sync=True)
     def ts_server_status(self, args):

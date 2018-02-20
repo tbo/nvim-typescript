@@ -5,7 +5,7 @@ import re
 import sys
 import platform
 import itertools
-from multiprocessing import Process
+import socket
 from time import time
 from tempfile import NamedTemporaryFile
 from deoplete.source.base import Base
@@ -13,7 +13,8 @@ from deoplete.util import error
 sys.path.insert(1, os.path.dirname(__file__) + '/../../nvim_typescript')
 
 from utils import getKind, convert_completion_data, convert_detailed_completion_data
-import client
+# from simpletcp.clientsocket import ClientSocket
+# import client
 RELOAD_INTERVAL = 1
 RESPONSE_TIMEOUT_SECONDS = 20
 
@@ -36,9 +37,10 @@ class Source(Base):
         self._last_input_reload = time()
         self._max_completion_detail = self.vim.vars[
             "nvim_typescript#max_completion_detail"]
+        self.client = socket.socket().connect(('127.0.0.1', 5000))
+        # self.client = ClientSocket("localhost", 5000, single_use=False)
         # self._client = client
-        client.logFun = self.log
-        
+        # client.logFun = self.log
 
     def log(self, message):
         """
@@ -71,52 +73,60 @@ class Source(Base):
         """
         returns the cursor position
         """
+        # self.log(sys.modules['client'])
         m = re.search(r"\w*$", context['input'])
         return m.start() if m else self.vim.current.window.cursor.col
 
     def gather_candidates(self, context):
-        self.log(client.server_handle)
-        try:
-            if time() - self._last_input_reload > RELOAD_INTERVAL or re.search(r"\w*\.", context["input"]):
-                self._last_input_reload = time()
-                self.reload()
-            data = self._client.completions(
-                file=self.relative_file(),
-                line=context["position"][1],
-                offset=context["complete_position"] + 1,
-                prefix=context["complete_str"]
-            )
-            # self.log(data)
+        self.log(client)
+        # self.client.send('test')
+        # response = self.client.recv(4096)
+        # response = self.client.send('helloo')
+        # self.vim.out_write('{} \n'.format(response))
+        # self.log(response.decode())
+        return []
 
-            if len(data) == 0:
-                return []
+        # try:
+        #     if time() - self._last_input_reload > RELOAD_INTERVAL or re.search(r"\w*\.", context["input"]):
+        #         self._last_input_reload = time()
+        #         self.reload()
+        #     data = self._client.completions(
+        #         file=self.relative_file(),
+        #         line=context["position"][1],
+        #         offset=context["complete_position"] + 1,
+        #         prefix=context["complete_str"]
+        #     )
+        #     # self.log(data)
 
-            if len(data) > self._max_completion_detail:
-                filtered = []
-                for entry in data:
-                    if entry["kind"] != "warning":
-                        filtered.append(entry)
-                return [convert_completion_data(e, self.vim) for e in filtered]
+        #     if len(data) == 0:
+        #         return []
 
-            names = []
-            maxNameLength = 0
+        #     if len(data) > self._max_completion_detail:
+        #         filtered = []
+        #         for entry in data:
+        #             if entry["kind"] != "warning":
+        #                 filtered.append(entry)
+        #         return [convert_completion_data(e, self.vim) for e in filtered]
 
-            for entry in data:
-                if entry["kind"] != "warning":
-                    names.append(entry["name"])
-                    maxNameLength = max(maxNameLength, len(entry["name"]))
+        #     names = []
+        #     maxNameLength = 0
 
-            detailed_data = self._client.completion_entry_details(
-                file=self.relative_file(),
-                line=context["position"][1],
-                offset=context["complete_position"] + 1,
-                entry_names=names
-            )
+        #     for entry in data:
+        #         if entry["kind"] != "warning":
+        #             names.append(entry["name"])
+        #             maxNameLength = max(maxNameLength, len(entry["name"]))
 
-            if len(detailed_data) == 0:
-                return []
+        #     detailed_data = self._client.completion_entry_details(
+        #         file=self.relative_file(),
+        #         line=context["position"][1],
+        #         offset=context["complete_position"] + 1,
+        #         entry_names=names
+        #     )
 
-            return [convert_detailed_completion_data(e, self.vim) for e in detailed_data]
+        #     if len(detailed_data) == 0:
+        #         return []
 
-        except:
-            return []
+        #     return [convert_detailed_completion_data(e, self.vim) for e in detailed_data]
+
+        # except:
+        #     return []

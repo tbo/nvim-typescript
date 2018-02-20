@@ -1,8 +1,12 @@
 #! /usr/bin/env python3
-
+import queue
 import os
 import json
 import subprocess
+import socket
+import asyncio
+# import threading
+from simpletcp.tcpserver import TCPServer
 
 
 # class Client(object):
@@ -42,10 +46,8 @@ def setServerPath(value):
 def setTsConfigVersion():
     global tsConfigVersion
     global serverPath
-
     command = serverPath.replace('tsserver', 'tsc')
-    rawOutput = subprocess.check_output([command + ' --version'], shell=True)
-
+    rawOutput = subprocess.check_output([command, '--version'])
     # strip nightly
     pure_version = rawOutput.rstrip().decode(
         'utf-8').split(' ').pop().split('-')[0]
@@ -129,6 +131,7 @@ def start(should_debug, debug_options):
             # shell=True,
             # bufsize=-1,
         )
+        # HTTPServer()
         return True
     else:
         return
@@ -433,3 +436,37 @@ def get_response_body(response, default=[]):
     success = bool(response) and "success" in response and response["success"]
     # Should we raise an error if success == False ?
     return response["body"] if success and "body" in response else default
+
+
+async def HTTPServer(loop):
+    # server = TCPServer("localhost", 5000, echo)
+    # server.run()
+
+    host = '127.0.0.1'
+    port = 5000
+    s = socket.socket()
+    s.bind((host, port))
+    s.listen(1)
+    s.setblocking(False)
+    while True:
+        connection, address = await loop.sock_accept(s)
+        loop.create_task(handle_client_connection(connection, loop))
+
+
+async def handle_client_connection(connection, loop):
+    while True:
+        data = await loop.sock_recv(connection, 10000)
+        if not data:
+            break
+        print(data.decode())
+        await loop.sock_sendall(connection, 'Got: {}'.format(data).encode())
+    connection.close()
+
+
+def startTCP():
+    loop = asyncio.get_event_loop()
+    loop.run_until_complete(HTTPServer(loop))
+
+if __name__ == "__main__":
+    startTCP()
+    # log('in main')
