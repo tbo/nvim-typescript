@@ -37,15 +37,18 @@ Decorator to check if server is running
 """
 
 
-def ts_check_server(f):
-    @wraps(f)
-    def decorated_function(*args):
-        ref = args[0]
-        if client.server_handle is None:
-            ref.printError('Server is not running')
-            return
-        return f(*args)
-    return decorated_function
+def ts_check_server(silent=False):
+    def decorator(f):
+        @wraps(f)
+        def decorated_function(*args):
+            ref = args[0]
+            if client.server_handle is None:
+                if silent is not True:
+                    ref.printError('Server is not running')
+                return
+            return f(*args)
+        return decorated_function
+    return decorator
 
 
 @neovim.plugin
@@ -122,6 +125,7 @@ class TypescriptHost(object):
         self.tsstart()
 
     @neovim.command("TSReloadProject")
+    @ts_check_server(silent=True)
     def reloadProject(self):
         """
         Reload the server/project
@@ -130,7 +134,7 @@ class TypescriptHost(object):
         client.refresh()
 
     @neovim.command("TSDoc")
-    @ts_check_server
+    @ts_check_server()
     def tsdoc(self):
         """
         Get the doc strings and type info
@@ -172,7 +176,7 @@ class TypescriptHost(object):
             self.vim.command('sil normal! gg')
 
     @neovim.command("TSDef")
-    @ts_check_server
+    @ts_check_server()
     def tsdef(self):
         """
         Get the definition
@@ -191,7 +195,7 @@ class TypescriptHost(object):
             self.printError('No definition')
 
     @neovim.command("TSDefPreview")
-    @ts_check_server
+    @ts_check_server()
     def tsdefpreview(self):
         """
             Get the definition
@@ -209,7 +213,7 @@ class TypescriptHost(object):
             self.printError('No definition')
 
     @neovim.command("TSType")
-    @ts_check_server
+    @ts_check_server()
     def tstype(self):
         """
         Get the type info
@@ -226,7 +230,7 @@ class TypescriptHost(object):
             self.printMsg(message)
 
     @neovim.command("TSTypeDef")
-    @ts_check_server
+    @ts_check_server()
     def tstypedef(self):
         self.reload()
         file = self.vim.current.buffer.name
@@ -240,7 +244,7 @@ class TypescriptHost(object):
             self.vim.command('e +' + defLine + ' ' + defFile)
 
     @neovim.command("TSRename", nargs="*")
-    @ts_check_server
+    @ts_check_server()
     def tsrename(self, args):
         """
         Rename the current symbol
@@ -278,7 +282,7 @@ class TypescriptHost(object):
             self.printError(renameRes['info']['localizedErrorMessage'])
 
     @neovim.command("TSImport")
-    @ts_check_server
+    @ts_check_server()
     @ts_version_support(216)
     def tsimport(self):
         self.reload()
@@ -368,13 +372,13 @@ class TypescriptHost(object):
 
     # REQUEST NAVTREE/DOC SYMBOLS
     @neovim.function("TSGetDocSymbolsFunc", sync=True)
-    @ts_check_server
+    @ts_check_server()
     def getDocSymbolsFunc(self, args=None):
         return client.getDocumentSymbols(self.relative_file())
 
     # Display Doc symbols in loclist
     @neovim.command("TSGetDocSymbols")
-    @ts_check_server
+    @ts_check_server()
     def tsgetdocsymbols(self):
         self.reload()
         docSysmbols = client.getDocumentSymbols(self.relative_file())
@@ -406,7 +410,7 @@ class TypescriptHost(object):
                 self.vim.command('lwindow')
 
     @neovim.function("TSGetWorkspaceSymbolsFunc", sync=True)
-    @ts_check_server
+    @ts_check_server()
     def getWorkspaceSymbolsFunc(self, args=None):
         self.reload()
         searchSymbols = client.getWorkspaceSymbols(
@@ -447,7 +451,7 @@ class TypescriptHost(object):
         return availableRefactors[int(refactorChoice)]
 
     @neovim.command("TSSig")
-    @ts_check_server
+    @ts_check_server()
     def tssig(self):
         """
         Get type signature for symbol at cursor
@@ -474,7 +478,7 @@ class TypescriptHost(object):
             self.printHighlight(params)
 
     @neovim.command("TSRefs")
-    @ts_check_server
+    @ts_check_server()
     def tsrefs(self):
         """
         Get all references of a symbol in a file
@@ -512,7 +516,7 @@ class TypescriptHost(object):
 
     # Edit your tsconfig
     @neovim.command("TSEditConfig")
-    @ts_check_server
+    @ts_check_server()
     def tseditconfig(self):
         """
         Open and edit the root tsconfig file
@@ -528,6 +532,7 @@ class TypescriptHost(object):
                 self.printError(
                     'Can\'t edit config, in an inferred project')
 
+
     # Omnifunc for regular neovim
     @neovim.function('TSOmnicFunc', sync=True)
     def tsomnifunc(self, args):
@@ -537,6 +542,7 @@ class TypescriptHost(object):
             return self.tscomplete(args[1])
 
     @neovim.function('TSComplete', sync=True)
+    @ts_check_server(silent=True)
     def tscomplete(self, args):
         line = self.vim.current.window.cursor[0]
         col = self.vim.current.window.cursor[1]
@@ -546,34 +552,37 @@ class TypescriptHost(object):
         else:
             prefix = args[0]
             col = args[1]
-        if client.server_handle is not None:
-            if time() - self._last_input_reload > RELOAD_INTERVAL or re.search(r"\w*\.", prefix):
-                self._last_input_reload = time()
-                self.reload()
-            data = client.completions(file, line, col, prefix)
-            if len(data) == 0:
-                return []
-            if len(data) > self.vim.vars["nvim_typescript#max_completion_detail"]:
-                filtered = []
-                for entry in data:
-                    if entry["kind"] != "warning":
-                        filtered.append(entry)
-                    return [utils.convert_completion_data(e, self.vim) for e in filtered]
-            names = []
-            for entry in data:
-                if (entry["kind"] != "warning"):
-                    names.append(entry["name"])
-            detailed_data = client.completion_entry_details(
-                file, line, col, names)
-            if len(detailed_data) == 0:
-                return []
-            return [utils.convert_detailed_completion_data(e, self.vim) for e in detailed_data]
+
+        if time() - self._last_input_reload > RELOAD_INTERVAL or re.search(r"\w*\.", prefix):
+            self._last_input_reload = time()
+            self.reload()
+
+        data = client.completions(file, line, col, prefix)
+        if len(data) == 0:
+            return []
+        # if len(data) > self.vim.vars["nvim_typescript#max_completion_detail"]:
+        filtered = []
+        for entry in data:
+            if entry["kind"] != "warning":
+                filtered.append(entry)
+            return [utils.convert_completion_data(e, self.vim) for e in filtered]
+        # names = []
+        # for entry in data:
+        #     if (entry["kind"] != "warning"):
+        #         names.append(entry["name"])
+        # detailed_data = client.completion_entry_details(
+        #     file, line, col, names)
+        # if len(detailed_data) == 0:
+        #     return []
+        # return [utils.convert_detailed_completion_data(e, self.vim) for e in detailed_data]
 
     @neovim.function('TSFindStart', sync=True)
     def tsfindstart(self):
         line_str = self.vim.current.line
         m = re.search(r"\w*$", line_str)
-        return m.start() if m else self.vim.current.window.cursor.col
+        return m.start() if m else self.vim.current.window.cursor[1] - 1
+
+
 
     # Server utils, Status, version, path
     @neovim.function('TSGetServerPath', sync=True)

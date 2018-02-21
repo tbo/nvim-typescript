@@ -31,7 +31,6 @@ class Source(Base):
         self.rank = 1000
         self.min_pattern_length = 1
         self.input_pattern = r'((?:\.|(?:,|:|->)\s+)\w*|\()'
-        self.__keyword_patterns = r'(?:[a-zA-Z@0-9_À-ÿ]|\.|::|->)*$'
         self._last_input_reload = time()
         self._max_completion_detail = self.vim.vars[
             "nvim_typescript#max_completion_detail"]
@@ -64,23 +63,14 @@ class Source(Base):
     #     return self.vim.current.buffer.name
 
     def get_complete_position(self, context):
-        """
-        returns the cursor position
-        """
-
-        m = re.search(
-            '(?:' + context['keyword_patterns'] + ')$', context['input'])
-        if m:
-            return m.start()
-
-        m = re.search(self.__keyword_patterns, context['input'])
-        if m:
-            return m.end()
+        m = re.search(r"\w*$", context['input'])
+        return m.start() if m else self.vim.current.window.cursor.col
 
     def gather_candidates(self, context):
         try:
             offset = context["complete_position"] + 1,
             res = self.vim.funcs.TSComplete(context["complete_str"], offset)
+            self.log(res)
             if len(res) == 0:
                 return []
             return res
@@ -112,7 +102,7 @@ class Source(Base):
         #         for entry in data:
         #             if entry["kind"] != "warning":
         #                 filtered.append(entry)
-        #         return [convert_completion_data(e, self.vim) for e in filtered]
+        # return [convert_completion_data(e, self.vim) for e in filtered]
 
         #     names= []
         #     maxNameLength= 0
@@ -132,7 +122,8 @@ class Source(Base):
         #     if len(detailed_data) == 0:
         #         return []
 
-        #     return [convert_detailed_completion_data(e, self.vim) for e in detailed_data]
+        # return [convert_detailed_completion_data(e, self.vim) for e in
+        # detailed_data]
 
         # except:
         #     return []
