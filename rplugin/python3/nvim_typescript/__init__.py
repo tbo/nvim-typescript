@@ -539,48 +539,45 @@ class TypescriptHost(object):
         if args[0]:
             return self.tsfindstart()
         else:
-            return self.tscomplete(args[1])
+            return self.tscomplete(args)
 
     @neovim.function('TSComplete', sync=True)
     @ts_check_server(silent=True)
     def tscomplete(self, args):
-        line = self.vim.current.window.cursor[0]
-        col = self.vim.current.window.cursor[1]
+        line = self.vim.eval("line('.')")
+        col = self.vim.eval("col('.')")
+        prefix = args[0]
         file = self.relative_file()
-        if type(args) is str:
-            prefix = args
-        else:
-            prefix = args[0]
-            col = args[1]
-
-        if time() - self._last_input_reload > RELOAD_INTERVAL or re.search(r"\w*\.", prefix):
+        if time() - self._last_input_reload > RELOAD_INTERVAL or re.search(r"\w*\.", args[1]):
             self._last_input_reload = time()
             self.reload()
-
         data = client.completions(file, line, col, prefix)
         if len(data) == 0:
             return []
-        # if len(data) > self.vim.vars["nvim_typescript#max_completion_detail"]:
-        filtered = []
+        if len(data) > self.vim.vars["nvim_typescript#max_completion_detail"]:
+            filtered = []
+            for entry in data:
+                if entry["kind"] != "warning":
+                    filtered.append(entry)
+                return [utils.convert_completion_data(e, self.vim) for e in filtered]
+        names = []
         for entry in data:
-            if entry["kind"] != "warning":
-                filtered.append(entry)
-            return [utils.convert_completion_data(e, self.vim) for e in filtered]
-        # names = []
-        # for entry in data:
-        #     if (entry["kind"] != "warning"):
-        #         names.append(entry["name"])
-        # detailed_data = client.completion_entry_details(
-        #     file, line, col, names)
-        # if len(detailed_data) == 0:
-        #     return []
-        # return [utils.convert_detailed_completion_data(e, self.vim) for e in detailed_data]
+            if (entry["kind"] != "warning"):
+                names.append(entry["name"])
+        detailed_data = client.completion_entry_details(
+            file, line, col, names)
+        if len(detailed_data) == 0:
+            return []
+        return [utils.convert_detailed_completion_data(e, self.vim) for e in detailed_data]
 
     @neovim.function('TSFindStart', sync=True)
     def tsfindstart(self):
         line_str = self.vim.current.line
+
+        # m = re.search(r"\w*$", line_str)
+        # return m.start() if m else self.vim.current.window.cursor.col
         m = re.search(r"\w*$", line_str)
-        return m.start() if m else self.vim.current.window.cursor[1] - 1
+        return m.start() if m else -1
 
 
 
