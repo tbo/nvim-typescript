@@ -59,6 +59,7 @@ class TypescriptHost(object):
         self._last_input_reload = time()
         self.cwd = os.getcwd()
         self.highlight_source = 0
+        client.logFunc = self.log
 
     def relative_file(self):
         """
@@ -532,34 +533,38 @@ class TypescriptHost(object):
                 self.printError(
                     'Can\'t edit config, in an inferred project')
 
-
     # Omnifunc for regular neovim
     @neovim.function('TSOmnicFunc', sync=True)
     def tsomnifunc(self, args):
         if args[0]:
             return self.tsfindstart()
         else:
-            return self.tscomplete(args)
+            return self.tscomplete(args[1])
 
     @neovim.function('TSComplete', sync=True)
     @ts_check_server(silent=True)
     def tscomplete(self, args):
-        line = self.vim.eval("line('.')")
-        col = self.vim.eval("col('.')")
-        prefix = args[0]
+        line = self.vim.current.window.cursor[0]
+        col = self.vim.current.window.cursor[1] + 1
         file = self.relative_file()
-        if time() - self._last_input_reload > RELOAD_INTERVAL or re.search(r"\w*\.", args[1]):
-            self._last_input_reload = time()
-            self.reload()
+
+        if len(args) > 1:
+            prefix = args[0]
+            col = args[1][0]
+        else:
+            prefix = args
+        self.reload()
+
         data = client.completions(file, line, col, prefix)
         if len(data) == 0:
             return []
+
         if len(data) > self.vim.vars["nvim_typescript#max_completion_detail"]:
             filtered = []
             for entry in data:
                 if entry["kind"] != "warning":
                     filtered.append(entry)
-                return [utils.convert_completion_data(e, self.vim) for e in filtered]
+            return [utils.convert_completion_data(e, self.vim) for e in filtered]
         names = []
         for entry in data:
             if (entry["kind"] != "warning"):
@@ -568,18 +573,14 @@ class TypescriptHost(object):
             file, line, col, names)
         if len(detailed_data) == 0:
             return []
-        return [utils.convert_detailed_completion_data(e, self.vim) for e in detailed_data]
+        return [utils.convert_detailed_completion_data(e, self.vim) for e in
+                detailed_data]
 
     @neovim.function('TSFindStart', sync=True)
     def tsfindstart(self):
         line_str = self.vim.current.line
-
-        # m = re.search(r"\w*$", line_str)
-        # return m.start() if m else self.vim.current.window.cursor.col
         m = re.search(r"\w*$", line_str)
         return m.start() if m else -1
-
-
 
     # Server utils, Status, version, path
     @neovim.function('TSGetServerPath', sync=True)
@@ -700,16 +701,6 @@ class TypescriptHost(object):
             'redraws! | echom "nvim-ts: " | echohl Function | echon "{0}" | echohl None'.format(message))
 
     def printMsg(self, message):
-        # winWidth = self.vim.current.window.width
-        # self.log(winWidth)
-        # self.log(len(message))
-        # x = self.vim.eval('&ruler')
-        # y = self.vim.eval('&showcmd')
-        # self.vim.command('set noruler noshowcmd')
-        #
-        # self.vim.command('redraws!')
-
-        # formatted = message[:winWidth]
         self.vim.out_write('nvim-ts: {0} \n'.format(message))
 
     def log(self, message):

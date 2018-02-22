@@ -3,12 +3,6 @@ import queue
 import os
 import json
 import subprocess
-# import socket
-# import asyncio
-# import multiprocessing
-# import threading
-# from simpletcp.tcpserver import TCPServer
-
 
 server_handle = None
 project_root = None
@@ -16,7 +10,7 @@ __server_seq = 1
 __environ = os.environ.copy()
 tsConfigVersion = None
 serverPath = None
-logFun = None
+logFunc = None
 
 
 def __get_next_seq():
@@ -27,9 +21,9 @@ def __get_next_seq():
 
 
 def log(message):
-    global logFun
-    if logFun:
-        logFun(str(message))
+    global logFunc
+    if logFunc:
+        logFunc(str(message))
 
 
 def setServerPath(value):
@@ -388,6 +382,7 @@ def completions(file, line, offset, prefix=""):
     }
 
     response = send_request("completions", args)
+    # log(response)
     return get_response_body(response)
 
 
